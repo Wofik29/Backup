@@ -1,0 +1,6 @@
+/bin
+*~
+application_log.*
+.classpath
+.settings
+
