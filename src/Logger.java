@@ -23,37 +23,7 @@ public class Logger {
 			}
 		
 	}
-	
-	public void printSeparatorTag(boolean isStart)
-	{
-		try
-		{
-			FileWriter fw;
-			fw = new FileWriter(log, true);
-			if (isStart) fw.write("\n");
-			for (int i=0;i<20;i++)
-			{
-				fw.write("=");
-			}
-			
-			if (isStart)
-				fw.write("Start");
-			else
-				fw.write("End");
-			
-			for (int i=0;i<20;i++)
-			{
-				fw.write("=");
-			}
-			fw.write("\n");
-			fw.close();
-		}
-		catch (Exception ex)
-		{
-			System.out.println("Не удалось записать в лог-файл");
-		}
-	}
-	
+
 	public void print(String text)
 	{
 		

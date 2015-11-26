@@ -60,7 +60,7 @@ public class Backup {
 			if (!(backup_handler.exists()) || isFull)
 			{
 				backup_handler.mkdir();
-				copyFiles(new File(target), new File(source));
+				fullBackup(new File(target), new File(source));
 			}
 			else
 			{
@@ -102,21 +102,26 @@ public class Backup {
 		//Collections.sort(backup_dirs);
 		Collections.sort(source_files);
 		//Collections.sort(storage_dirs);
-		//List<String> delete_list;
 		
 		Iterator<String> target_it = target_files.iterator();
 		Iterator<String> source_it = source_files.iterator();
 		
-		String target_path = target_it.next();
-		String source_path = source_it.next();
+		boolean isTarget = true;
+		boolean isSource = true;
+		String source_path = "";
+		String target_path = "";
 		
 		while (source_it.hasNext())
 		{
+			if (isSource) source_path = source_it.next();
+			else isSource = true;
+			
 			if (target_it.hasNext())
 			{
+				if (isTarget) target_path = target_it.next();
+				else isTarget = true;
 				
-				//System.out.println(target_path + ", " + source_path);
-		
+				//System.out.println(target_path);
 				File target_file = new File(target+target_path);
 				File source_file = new File(source+source_path);
 				StringBuilder sb = new StringBuilder();
@@ -126,7 +131,6 @@ public class Backup {
 				File history_file = new File(history+target_path).getParentFile();
 				if (!history_file.exists()) history_file.mkdirs();
 				
-				
 				if  (target_path == source_path)
 				{
 					// Если одинаковое имя
@@ -134,7 +138,6 @@ public class Backup {
 					
 					if (source_file.lastModified() > target_file.lastModified() || source_file.length() != target_file.length() )
 					{
-						//System.out.println(true);
 						particle = new SimpleDateFormat("yyyy-MM-dd").format( System.currentTimeMillis() ); // Создаем текущую дату в виде строки
 						
 						sb.append(history_file.getPath()).
@@ -153,30 +156,11 @@ public class Backup {
 								append(new String(name_file.substring(name_file.lastIndexOf('.'), name_file.length())));
 						}
 						
+						// Копирование в историю
+						copyFile(target_file, new File(sb.toString()));
 						
-						try
-						{	
-							File f = new File(sb.toString());
-							if (f.exists()) f.delete();
-							Files.copy(target_file.toPath(), f.toPath());
-							//System.out.println(sb);
-						}
-						catch (Exception ex)
-						{
-							Main.log.print("Не удалось скопировать "+target_file.toString()+" в историю - "+sb);
-						}
-						
-						try
-						{	
-							target_file.delete();
-							Files.copy(source_file.toPath(), target_file.toPath());
-							target_file.setLastModified(source_file.lastModified());							
-							//System.out.println("copy "+source_file.getPath() + ", "+target_file.getPath());
-						}
-						catch (Exception ex)
-						{
-							Main.log.print("Не удалось скопировать "+source_file.toString()+" в бэкап");
-						}
+						// Копирование в бэкап
+						copyFile(source_file, target_file);
 					}
 					else
 					{
@@ -185,9 +169,6 @@ public class Backup {
 							Main.log.print("Файлы "+source_path+" и "+target_path+"не равны по размеру, но в источнике файл не новый.");
 						}
 					}
-					
-					source_path = source_it.next();
-					target_path = target_it.next();
 				} 
 				else // Если имена не сопадают
 				{
@@ -210,58 +191,55 @@ public class Backup {
 								append(new String(name_file.substring(name_file.lastIndexOf('.'), name_file.length())));
 						}
 						
-						try
-						{	
-							File f = new File(sb.toString());
-							if (f.exists()) f.delete();
-							Files.copy(target_file.toPath(), f.toPath());
-							
-						}
-						catch (Exception ex)
-						{
-							Main.log.print("Не удалось скопировать "+target_file.toString()+" в историю");
-						}
-						
+						copyFile(target_file, new File(sb.toString()));
+												
 						try
 						{
 							if (target_file.exists()) target_file.delete();
 						}
 						catch (Exception ex)
 						{
-							Main.log.print("Не удалось удалить "+target_file.toString());
+							Main.log.print("Не удалось удалить "+ex.getMessage());
 						}
 						
 						// Смотрим следующий файл в target
-						target_path = target_it.next();
+						isSource = false;
 					}
 					else // Иначе этот файл новый, и мы еще не дошли до нашего файла.
 					{
-						try
-						{	
-							File f = new File(target+source_path);
-							f.delete();
-							Files.copy(source_file.toPath(), f.toPath());
-							f.setLastModified(source_file.lastModified());
-							//System.out.println("copy ");
-							//System.out.println(source_file.getPath() + ", "+target_file.getPath());
-						}
-						catch (Exception ex)
-						{
-							Main.log.print("Не удалось скопировать "+source_file.toString()+" в бэкап");
-						}
-						
-						source_path = source_it.next();
-						
+						copyFile(source_file, new File(target+source_path));
+						isTarget = false;
 					}
 				}
 			}
+			else
+			{
+				copyFile(new File(source+source_path), new File(target+source_path));
+				isTarget = false;
+			}
 		}
+		//System.out.println("End: "+source_path);
 	}
 
+	private void copyFile(File source, File target)
+	{	
+		try
+		{
+			if (target.exists()) target.delete();
+			Files.copy(source.toPath(), target.toPath());
+			target.setLastModified(source.lastModified());
+		}
+		catch (Exception ex)
+		{
+			Main.log.print("Не удалось скопировать ---> "+ex);
+		}
+	}
+	
+	
 	/*
 	 * Метод рекурсивно делает полный бэкап данных
 	 */
-	private void copyFiles(File target, File source)
+	private void fullBackup(File target, File source)
 	{
 		for (File source_file : source.listFiles())
 		{
@@ -274,20 +252,11 @@ public class Backup {
 			if (source_file.isDirectory())
 			{
 				target_file.mkdir();
-				copyFiles(target_file, source_file);
+				fullBackup(target_file, source_file);
 			}
 			else
-			{
-				try
-				{
-					if (target_file.exists()) target_file.delete();
-					Files.copy(source_file.toPath(), target_file.toPath() );
-					target_file.setLastModified(source_file.lastModified());
-				}
-				catch (Exception e)
-				{
-					Main.log.print("Не удалось скопировать "+source_file.getPath()+" в бэкап");
-				}
+			{				
+				copyFile(source_file, target_file);
 			}
 		}
 	}
