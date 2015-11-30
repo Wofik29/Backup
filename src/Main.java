@@ -49,7 +49,7 @@ public class Main {
 			String baseDir = new File("").getAbsolutePath();			
 			test = new File (source);
 			log = new Logger(baseDir+"/backup_log");
-			
+						
 			if ("".equals(source))
 			{
 				log.print("Не указан путь до Source");
@@ -73,6 +73,7 @@ public class Main {
 				log.print("Нет доступа для чтения target");
 				System.exit(1);
 			}
+			
 			
 			
 			log.print("Start "+source+" -> "+target);

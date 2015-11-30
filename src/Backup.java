@@ -99,9 +99,9 @@ public class Backup {
 
 
 		Collections.sort(target_files);
-		//Collections.sort(backup_dirs);
+		Collections.sort(target_dirs);
 		Collections.sort(source_files);
-		//Collections.sort(storage_dirs);
+		Collections.sort(source_dirs);
 		
 		Iterator<String> target_it = target_files.iterator();
 		Iterator<String> source_it = source_files.iterator();
@@ -116,6 +116,12 @@ public class Backup {
 			if (isSource) source_path = source_it.next();
 			else isSource = true;
 			
+			File history_file = new File(history+source_path).getParentFile();
+			if (!history_file.exists()) history_file.mkdirs();
+			
+			File target_parent = new File(target+source_path).getParentFile();
+			if (!target_parent.exists()) target_parent.mkdirs();
+			
 			if (target_it.hasNext())
 			{
 				if (isTarget) target_path = target_it.next();
@@ -128,8 +134,6 @@ public class Backup {
 				String particle;
 				String name_file = target_file.getName();
 				
-				File history_file = new File(history+target_path).getParentFile();
-				if (!history_file.exists()) history_file.mkdirs();
 				
 				if  (target_path == source_path)
 				{
@@ -218,7 +222,6 @@ public class Backup {
 				isTarget = false;
 			}
 		}
-		//System.out.println("End: "+source_path);
 	}
 
 	private void copyFile(File source, File target)
