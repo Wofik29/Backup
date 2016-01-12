@@ -67,8 +67,13 @@ public class Backup {
 			}
 			else
 			{
-				additionalBackup(new File(target), new File(source), new File(history));
+
+				// Создание списка файлов и папок бэкапа и хранилища
+				createListBackupFiles(new File(target), root_target, target_dirs, target_files);
+				createListBackupFiles(new File(source), root_source, source_dirs, source_files);
+				
 				isNewFolders();
+				additionalBackup(new File(target), new File(source), new File(history));
 			}
 		}
 
@@ -96,16 +101,11 @@ public class Backup {
 	{
 		if (!history.exists()) history.mkdir(); // Создание папки с историей, если нет
 		
-		// Создание списка файлов и папок бэкапа и хранилища
-		createListBackupFiles(bp, root_target, target_dirs, target_files);
-		createListBackupFiles(stg, root_source, source_dirs, source_files);
-
-
 		Collections.sort(target_files);
 		Collections.sort(source_files);
 		
-		System.out.println(source_files.size());
-		System.out.println(target_files.size());
+		//System.out.println(source_files.size());
+		//System.out.println(target_files.size());
 		
 		//Iterator<String> target_it = target_files.iterator();
 		//Iterator<String> source_it = source_files.iterator();
@@ -123,8 +123,8 @@ public class Backup {
 		String target_path = "";
 		
 		// позиция
-		int source_number = 0;
-		int target_number = 0;
+		int source_number = -1;
+		int target_number = -1;
 		
 		// размер, да
 		int source_size = source_files.size()-1;
@@ -133,17 +133,24 @@ public class Backup {
 		
 		while (has_next_source)
 		{
+
+			//System.out.println(isSource+", "+has_next_source);
+			//System.out.println(isTarget+", "+has_next_target);
 			
 			if (isSource)
 			{
-				source_path = source_files.get(source_number);
-				source_number++;
+				/*
+				 *  Все же проверки, чтобы не выйти за границу. 
+				 *  Т.к. по другому не получалось
+				 *  проверить последние файлы, и чтобы не выходить за диапазон  
+				 */
+				if (++source_number <= source_size)
+				source_path = source_files.get(source_number);				
 			} 
 			else isSource = true;
 		
-			System.out.println("S: "+(source_number-1)+" - "+source_path);
-			File history_file = new File(history+source_path).getParentFile();
 			File target_parent = new File(target+source_path).getParentFile();
+			//System.out.println("S: "+(source_number)+" - "+source_path);
 			
 			if (!target_parent.exists()) target_parent.mkdirs();
 			
@@ -152,15 +159,16 @@ public class Backup {
 				
 				if (isTarget)
 				{
+					if (++target_number <= target_size)
 					target_path = target_files.get(target_number);
-					target_number++;
+					
 				}
 				else isTarget = true;
 				
-				System.out.println("T: "+(target_number-1)+" - "+target_path);
+				//System.out.println("T: "+(target_number)+" - "+target_path);
 				File target_file = new File(target+target_path);
 				File source_file = new File(source+source_path);
-				
+				File history_file = new File(this.history+target_path);
 				String particle;
 				
 				if  (target_path == source_path)
@@ -186,22 +194,17 @@ public class Backup {
 				}
 				else // Если имена не сопадают
 				{
-					// System.out.println(source_path.compareTo(target_path));
+					System.out.println("---");
+					System.out.println(source_path+" - "+target_path);
+					System.out.println(source_path.compareTo(target_path));
 					
 					if (source_path.compareTo(target_path) > 0) // Если больше 0, то source>target. по алфавиту мы прошли target_name
 					{
 						// Копируем в history как удаленный
 						particle = String.format(history_delete_suffix, System.currentTimeMillis());
-						copyToHistory(particle, target_file, new File(history+target_path));
+						copyToHistory(particle, target_file, history_file);
 												
-						try
-						{
-							if (target_file.exists()) target_file.delete();
-						}
-						catch (Exception ex)
-						{
-							Main.log.print("Не удалось удалить "+ex.getMessage());
-						}
+						
 						
 						// Смотрим следующий файл в target
 						isSource = false;
@@ -218,28 +221,31 @@ public class Backup {
 				if (!isIgnore(source+source_path)) copyFile(new File(source+source_path), new File(target+source_path));
 				isTarget = false;
 			}
-					
-			//System.out.println(isSource+", "+has_next_source);
-			//System.out.println(isTarget+", "+has_next_target);
 			
 			// Если в target закончились файлы
-			if (target_number > target_size) has_next_target = false;
+			if (target_number >= target_size && isTarget) has_next_target = false;
 			
 			// Если в source закончились файлы и нужен следующий, т.е. не ждет от target.
-			if (source_number > source_size && isSource) has_next_source = false;
+			
+			if (source_number >= source_size && isSource) has_next_source = false;
 			
 			//System.out.println();
 		}
 		
 		// Если какие то файлы остались в target, ты мы их копируем как удаленные.
+		// System.out.println(target_number+" - "+target_size);
 		while (target_number < target_size) 
 		{
 			String particle = String.format(history_delete_suffix, System.currentTimeMillis());
 			
+			// Тут увеличиваем, в том случае,
+			if (isTarget)	target_number++;
+			else isTarget = true;
+				
 			target_path = target_files.get(target_number);
-			target_number++;
 			
-			copyToHistory(particle, new File(target + target_path), new File(history+target_path));
+			
+			copyToHistory(particle, new File(target + target_path), new File(this.history+target_path));
 			//System.out.println("next : "+target + target_path+ ", "+history+target_path);  
 		}
 	}
@@ -279,10 +285,20 @@ public class Backup {
 				append(particle).
 				append(new String(name_file.substring(name_file.lastIndexOf('.'), name_file.length())));
 		}
-	
+		
+		//System.out.println("Copy to history: "+target_file+" - "+sb);
+		
 		if (!history_file.getParentFile().exists()) history_file.getParentFile().mkdirs();
 		copyFile(target_file, new File(sb.toString()));
-	
+		
+		try
+		{
+			if (target_file.exists()) target_file.delete();
+		}
+		catch (Exception ex)
+		{
+			Main.log.print("Не удалось удалить "+ex.getMessage());
+		}	
 	}
 	
 	private void copyFile(File source, File target)
@@ -334,9 +350,9 @@ public class Backup {
 
 		Collections.sort(target_dirs);
 		Collections.sort(source_dirs);
-		System.out.println("find folders");
-		System.out.println(source_dirs.size());
-		System.out.println(target_dirs.size());
+		//System.out.println("find folders");
+		//System.out.println(source_dirs.size());
+		//System.out.println(target_dirs.size());
 		
 		//Iterator<String> target_it = target_dirs.iterator();
 		//Iterator<String> source_it = source_dirs.iterator();
@@ -409,7 +425,7 @@ public class Backup {
 	private void loadConfig()
 	{
 		File conf = new File("Backup.ini");
-		System.out.println("load config");
+		//System.out.println("load config");
 		ignore_list = new ArrayList<String>();
 		
 		byte command = 0;
