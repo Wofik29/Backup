@@ -1,323 +1,263 @@
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
-import java.util.List;
+import java.nio.file.CopyOption;
 import java.nio.file.Files;
-import java.text.SimpleDateFormat;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
+import java.util.List;
 
 
-/*
- * Объект, который работает с бэкапом.
- */
+public class Backup
+{
 
-public class Backup {
-
-	private String source;				// От куда брать
-	private String target;				// Куда сохранять
-	private String history; 			// файловая история
-
-	private boolean isFull;				// Флаг. Полный или частичный бэкап
-
-	private int root_source;
-	private int root_target;
-	private int root_history;
-	
-	private String history_delete_suffix = "[DELETE_%d]";
-	private String history_update_suffix = "[%d]";
-	
-	private List<String> source_dirs;	// список директории 
-	private List<String> source_files;	// список файлов
-	private List<String> target_dirs;	// список директории бэкапа
-	private List<String> target_files;	// список файлов бэкапа
 	private List<String> ignore_list;
-
-
-	public Backup(String storage, String backup, boolean isFull)
-		{
-
-			this.source = storage.replace('\\', '/');
-			this.target = backup.replace('\\', '/')+"/current";;
-			this.history = backup.replace('\\', '/')+"/history";
-			this.isFull = isFull;
-
-			this.root_target = this.target.length();
-			this.root_source = this.source.length();
-			this.root_history = this.history.length();
-
-			target_dirs = new ArrayList<String>();
-			target_files = new ArrayList<String>();
-			source_dirs = new ArrayList<String>();
-			source_files = new ArrayList<String>();
-		}
-
-	public void start()
-		{
-		// Проверка на то, какой бэкап делать полный\частичный
-			
-			File backup_handler = new File(target);
-			loadConfig();
-			if (!(backup_handler.exists()) || isFull)
-			{
-				backup_handler.mkdir();
-				fullBackup(new File(target), new File(source));
-			}
-			else
-			{
-
-				// Создание списка файлов и папок бэкапа и хранилища
-				createListBackupFiles(new File(target), root_target, target_dirs, target_files);
-				createListBackupFiles(new File(source), root_source, source_dirs, source_files);
-				
-				isNewFolders();
-				additionalBackup(new File(target), new File(source), new File(history));
-			}
-		}
-
-
-
-	// Создание списка строк из корня source\target
-	public void createListBackupFiles(File f, int beginIndex, List<String> dirs, List<String> files)
+	
+	private String history_delete_suffix = "[delete_%tF]";
+	private String history_update_suffix = "[%tF]";
+	
+	private String target;
+	private String source;
+	private String history;
+	
+	private int target_length;
+	private int source_length;
+	
+	private Component source_new_list;
+	private Component target_delete_list;
+	
+	public Backup(String source, String target)
 	{
-		for (File file : f.listFiles())
-		{
-			String s = file.getPath().substring(beginIndex).intern();
-			if (file.isDirectory()) 
-			{
-				dirs.add(s);
-				createListBackupFiles(file, beginIndex, dirs, files);
-			}
-			else
-			{
-				files.add(s);
-			}
-		}
-	}
-
-	public void additionalBackup(File bp, File stg, File history)
-	{
-		if (!history.exists()) history.mkdir(); // Создание папки с историей, если нет
+		this.source = source.replace('\\', '/');
+		this.target = target.replace('\\', '/')+"/current";
+		this.history = target.replace('\\', '/')+"/history";
 		
-		Collections.sort(target_files);
-		Collections.sort(source_files);
-		
-		//System.out.println(source_files.size());
-		//System.out.println(target_files.size());
-		
-		//Iterator<String> target_it = target_files.iterator();
-		//Iterator<String> source_it = source_files.iterator();
-		
-		// отвечают за то, брать ли слудующий элемент
-		boolean isTarget = true;
-		boolean isSource = true;
-		
-		// отвечают за то, заходить ли в цикл вообще
-		boolean has_next_target = true;
-		boolean has_next_source = true;
-		
-		// Локальные пути
-		String source_path = "";
-		String target_path = "";
-		
-		// позиция
-		int source_number = -1;
-		int target_number = -1;
-		
-		// размер, да
-		int source_size = source_files.size()-1;
-		int target_size = target_files.size()-1;
-		
-		
-		while (has_next_source)
-		{
-
-			//System.out.println(isSource+", "+has_next_source);
-			//System.out.println(isTarget+", "+has_next_target);
-			
-			if (isSource)
-			{
-				/*
-				 *  Все же проверки, чтобы не выйти за границу. 
-				 *  Т.к. по другому не получалось
-				 *  проверить последние файлы, и чтобы не выходить за диапазон  
-				 */
-				if (++source_number <= source_size)
-				source_path = source_files.get(source_number);				
-			} 
-			else isSource = true;
-		
-			File target_parent = new File(target+source_path).getParentFile();
-			//System.out.println("S: "+(source_number)+" - "+source_path);
-			
-			if (!target_parent.exists()) target_parent.mkdirs();
-			
-			if (has_next_target)
-			{
-				
-				if (isTarget)
-				{
-					if (++target_number <= target_size)
-					target_path = target_files.get(target_number);
-					
-				}
-				else isTarget = true;
-				
-				//System.out.println("T: "+(target_number)+" - "+target_path);
-				File target_file = new File(target+target_path);
-				File source_file = new File(source+source_path);
-				File history_file = new File(this.history+target_path);
-				String particle;
-				
-				if  (target_path == source_path)
-				{
-					// Если одинаковое имя
-					// TODO сделать проверку не только на время изменение и длинну
-					
-					if (source_file.lastModified() > target_file.lastModified() || source_file.length() != target_file.length() )
-					{
-						particle = String.format(history_update_suffix, System.currentTimeMillis()); // Создаем текущую дату в виде строки
-						copyToHistory(particle, target_file, history_file);
-						
-						// Копирование в бэкап
-						copyFile(source_file, target_file);
-					}
-					else
-					{
-						if (source_file.length() != target_file.length() && source_file.lastModified() < target_file.lastModified())
-						{
-							Main.log.print("Файлы "+source_path+" и "+target_path+"не равны по размеру, но в источнике файл не новый.");
-						}
-					}
-				}
-				else // Если имена не сопадают
-				{
-					System.out.println("---");
-					System.out.println(source_path+" - "+target_path);
-					System.out.println(source_path.compareTo(target_path));
-					
-					if (source_path.compareTo(target_path) > 0) // Если больше 0, то source>target. по алфавиту мы прошли target_name
-					{
-						// Копируем в history как удаленный
-						particle = String.format(history_delete_suffix, System.currentTimeMillis());
-						copyToHistory(particle, target_file, history_file);
-												
-						
-						
-						// Смотрим следующий файл в target
-						isSource = false;
-					}
-					else // Иначе этот файл новый, и мы еще не дошли до нашего файла.
-					{
-						if (!isIgnore(source_file.getPath())) copyFile(source_file, new File(target+source_path));
-						isTarget = false;
-					}
-				}
-			}
-			else
-			{
-				if (!isIgnore(source+source_path)) copyFile(new File(source+source_path), new File(target+source_path));
-				isTarget = false;
-			}
-			
-			// Если в target закончились файлы
-			if (target_number >= target_size && isTarget) has_next_target = false;
-			
-			// Если в source закончились файлы и нужен следующий, т.е. не ждет от target.
-			
-			if (source_number >= source_size && isSource) has_next_source = false;
-			
-			//System.out.println();
-		}
-		
-		// Если какие то файлы остались в target, ты мы их копируем как удаленные.
-		// System.out.println(target_number+" - "+target_size);
-		while (target_number < target_size) 
-		{
-			String particle = String.format(history_delete_suffix, System.currentTimeMillis());
-			
-			// Тут увеличиваем, в том случае,
-			if (isTarget)	target_number++;
-			else isTarget = true;
-				
-			target_path = target_files.get(target_number);
-			
-			
-			copyToHistory(particle, new File(target + target_path), new File(this.history+target_path));
-			//System.out.println("next : "+target + target_path+ ", "+history+target_path);  
-		}
-	}
-
-	private boolean isIgnore(String path)
-	{
-		File f = new File(path);
-		for (String s : ignore_list)
-		{
-			if (f.getName().matches(s)) 
-			{
-				return true;
-			};
-		}
-		
-		return false;
+		target_length = this.target.length();
+		source_length = this.source.length();
 	}
 	
-	
-	private void copyToHistory(String particle, File target_file, File history_file)
+	public void start(boolean isFull)
 	{
-		StringBuilder sb = new StringBuilder();
-		String name_file = target_file.getName();
+		//System.out.println(target);
+		//System.out.println(source);
+		//System.out.println(history);
 		
-		sb.append(history_file.getParent()).
-			append(File.separator);
 		
-		if (name_file.lastIndexOf('.') == -1)
+		loadConfig();
+		if (isFull)
 		{
-			sb.append(name_file).
-				append(".").
-				append(particle);
+			fullBackup(new File(target), new File(source));
 		}
 		else
 		{
-			sb.append(new String(name_file.substring(0, name_file.lastIndexOf('.')+1))).
-				append(particle).
-				append(new String(name_file.substring(name_file.lastIndexOf('.'), name_file.length())));
-		}
-		
-		//System.out.println("Copy to history: "+target_file+" - "+sb);
-		
-		if (!history_file.getParentFile().exists()) history_file.getParentFile().mkdirs();
-		copyFile(target_file, new File(sb.toString()));
-		
-		try
-		{
-			if (target_file.exists()) target_file.delete();
-		}
-		catch (Exception ex)
-		{
-			Main.log.print("Не удалось удалить "+ex.getMessage());
-		}	
-	}
-	
-	private void copyFile(File source, File target)
-	{	
-		try
-		{
-			if (target.exists()) target.delete();
-			Files.copy(source.toPath(), target.toPath());
-			target.setLastModified(source.lastModified());
-		}
-		catch (Exception ex)
-		{
-			Main.log.print("Не удалось скопировать ---> "+ex);
+			File f = new File(source);
+			Composite source = new Composite(f.getName(), f.getAbsolutePath(), f.lastModified() );
+			source.createTree();
+			
+			f = new File(target);
+			if (!f.exists()) f.mkdir();
+			
+			Component target = new Composite(f.getName(), f.getAbsolutePath(), f.lastModified() );
+			target.createTree();
+			
+			f = new File(history);
+			if (!f.exists()) f.mkdir();
+			
+			source_new_list = new Composite("Source", this.source, source.modified);
+			target_delete_list = new Composite("Target", this.target, target.modified);
+			
+			additionalBackup(source, target);
+			
+			checkFolders();
+			
+			//source.print(0);
+			//System.out.println();
+			//target.print(0);
+			
+			source.createTree();
+			target.createTree();
+			
+			Main.error_log.print(source.equals_s(target));
 		}
 	}
 	
-	
+	private void additionalBackup(Component source, Component target)
+	{
+		Iterator<Component> source_it = source.getIterator();
+		Iterator<Component> target_it = target.getIterator();
+		
+		Component source_child = null;
+		Component target_child = null;
+		
+		// Флаги, для проверки
+		// есть ли еще файлы в списке
+		boolean source_has;
+		boolean target_has;
+		
+		// Нужен ли следующий файл
+		boolean source_next = true;
+		boolean target_next = true;
+		
+		if (source_it.hasNext()) source_has = true;
+		else source_has = false;
+		
+		if (target_it.hasNext()) target_has = true;
+		else target_has = false;
+		
+		String particle;
+		
+		while (source_has)
+		{
+			if (source_it.hasNext() && source_next) source_child = source_it.next();
+			else source_next = true;
+			
+			if (target_has)
+			{
+				if (target_it.hasNext() && target_next) target_child = target_it.next();
+				else target_next = true;
+				
+				// Если эти элменты директории и равны друг другу
+				if (!source_child.isLeaf && !target_child.isLeaf && source_child.name.equals(target_child.name))
+				{
+					additionalBackup(source_child, target_child);
+				}
+				else if (source_child.name.equals(target_child.name))
+				{
+					
+					// Если это документы и у них различаются даты
+					if (source_child.isLeaf && target_child.isLeaf && source_child.modified != target_child.modified )
+					{
+						particle = String.format(history_update_suffix, System.currentTimeMillis());
+						
+						StringBuffer sb = new StringBuffer();
+						
+						sb.append(history).
+							append(target_child.path.substring(target_length));
+						
+						// Копируем в историю
+						copyToHistory(new File(target_child.path), new File(sb.toString()), particle);
+						
+						//System.out.println(target_child.path.substring(target_length));
+						//System.out.println("history : "+history);
+						//System.out.println("history : "+sb);
+						
+						// Копируем в бэкап
+						copyFile(new File(source_child.path), new File(target_child.path));
+					}
+					else if (source_child.isLeaf ^ target_child.isLeaf) // Мало вероятно, чтоб файл и папка были с одинаковым именем оО Что то вообще надо делать?
+					{
+						
+					}
+					
+				}
+				else
+				{
+					/* Если имена не совпдают, то это разные файлы. Или вообще файл-папка.
+					 * Проверяем это.
+					 */
+					if (source_child.compareTo(target_child) > 0) // Если так, то мы прошли target файл, т.е. его нет в source, т.е. target устарел и его надо удалить
+					{
+						if (!target_child.isLeaf)
+						{
+							target_delete_list.add(target_child);
+						}
+						else
+						{
+							// Копируем в историю
+							particle = String.format(history_delete_suffix, System.currentTimeMillis());
+							
+							File delete = new File(target_child.path);
+							
+							copyToHistory(delete, new File(history+target_child.path.substring(target_length)), particle);
+							
+							delete.delete();
+						}
+						source_next = false;
+					}
+					else // иначе это новый файл, т.к. он младше target по алфавиту.
+					{
+						if (!source_child.isLeaf)
+						{
+							// Новая папка, отмечаем в списке new
+							source_new_list.add(source_child);
+						}
+						else
+						{
+							// Копируем в бэкап
+							copyFile(new File(source_child.path), new File(target+File.separator+source_child.name));
+						}
+						target_next = false;
+					}
+				}
+			}
+			else
+			{
+				if (!source_child.isLeaf)
+				{
+					// Новая папка, отмечаем в списке new
+					source_new_list.add(source_child);
+				}
+				else
+				{
+					// Копируем в бэкап
+					copyFile(new File(source_child.path), new File(target+File.separator+source_child.name));
+					System.out.println(target+File.separator+source_child.name);
+				}
+			}
+			
+			//if (target_child != null) System.out.println("target : "+target_child.path);
+			//if (source_child != null) System.out.println("source : "+source_child.path);
+			//System.out.println();
+			
+			// Если больше нет, а надо, то закрываем ветку.
+			if (!target_it.hasNext() && target_next) target_has = false;
+			if (!source_it.hasNext() && source_next) source_has = false;
+			
+		}
+		
+		// Если в списке target что-то осталось
+		while (target_has)
+		{
+			// Нужен ли следующий
+			if (target_next)
+			{
+				target_child = target_it.next();
+				target_next = false;
+			}
+			
+			// Если нам нужен был следующий, то его надо обработать иначе нет
+			if (!target_next)
+			{
+				if (target_child.isLeaf)
+				{
+					particle = String.format(history_delete_suffix, System.currentTimeMillis());
+					
+					File delete = new File(target_child.path);
+					
+					copyToHistory(delete, new File(history+target_child.path.substring(target_length)), particle);
+					
+					delete.delete();
+				}
+				else
+				{
+					target_delete_list.add(target_child);
+				}
+			}
+			
+			// если в списке что то есть, то берем, иначе выходим
+			if (target_it.hasNext())
+				target_child = target_it.next();
+			else
+				target_has = false;
+		}
+	}
+
 	/*
-	 * Метод рекурсивно делает полный бэкап данных
+	 * Метод рекурсивно делает полный бэкап данных.
+	 * Для него ненадо дерева. Просто корни папок.
 	 */
 	private void fullBackup(File target, File source)
 	{
@@ -335,93 +275,171 @@ public class Backup {
 				fullBackup(target_file, source_file);
 			}
 			else
-			{				
-				if (!isIgnore(source_file.getPath())) copyFile(source_file, target_file);
+			{
+				if (!isIgnore(source_file)) copyFile(source_file, target_file);
 			}
 		}
 	}
 	
 	/*
-	 * Проверяет, появилась ли новая папка в источнике
-	 * Если появилась, то пока только лог об этом
+	 * Проверяет списки target_delete_list и source_new_list
+	 * Если есть совпадение, то в лог
+	 * если нет, то удаление
 	 */
-	private void isNewFolders()
+	private void checkFolders()
 	{
-
-		Collections.sort(target_dirs);
-		Collections.sort(source_dirs);
-		//System.out.println("find folders");
-		//System.out.println(source_dirs.size());
-		//System.out.println(target_dirs.size());
+		source_new_list.sort();
+		target_delete_list.sort();
 		
-		//Iterator<String> target_it = target_dirs.iterator();
-		//Iterator<String> source_it = source_dirs.iterator();
+		Iterator<Component> source_it = source_new_list.getIterator();
+		Iterator<Component> target_it = target_delete_list.getIterator();
 		
-		int source_number = 0;
-		int target_number = 0;
-
+		Component source = null;
+		Component target = null;
 		
-		boolean isTarget = true;
-		boolean isSource = true;
-		
-		boolean has_next_target = true;
-		boolean has_next_source = true;
-		
-		String source_path = "";
-		String target_path = "";
-		
-		int target_size = target_dirs.size()-1;
-		int source_size = source_dirs.size()-1;
-		
-		while (has_next_source)
+		/*
+		 * Получается вычислаем, какие из всего списка одинаковы
+		 * А в последующих циклах уже удаляем/копируем, что новое/старое
+		 */
+		while (source_it.hasNext())
 		{
+			source = source_it.next();
 			
-			if (isSource) source_path = source_dirs.get(source_number++);
-			else isSource = true;
-						
-			if (has_next_target)
+			// затратный цикл?
+			// Пробегаем по всему списку удаленных и сравниваем.
+			// Если совпали, то убираем их из списка и пишем в лог.
+			while (target_it.hasNext())
 			{
+				target = target_it.next();
 				
-				if (isTarget) target_path = target_dirs.get(target_number++);
-				else isTarget = true;
-				
-				if (source_path != target_path)
+				if (source.equals(target))
 				{
-					if (source_path.compareTo(target_path) > 0)
-					{
-						Main.log.print("папка "+target_path+" удалена");
-						isSource = false;
-					}
-					else
-					{
-						Main.log.print("новая папка "+source_path);
-						isTarget = false;
-					}
+					target_it.remove();
+					source_it.remove();
+					Main.log.print("!!!Equals folders: "+source.path+" -> "+target.path);
+					break;
+				}
+				// если мы по алфавиту прошли дальше, чем имя target, то выходим из цикла.
+				else if (source.name.compareTo(target.name) > 0)
+				{
+					break;
 				}
 			}
-			else
+		}
+		
+		source_it = source_new_list.getIterator();
+		target_it = target_delete_list.getIterator();
+		
+		while (source_it.hasNext())
+		{
+			source = source_it.next();
+			StringBuffer sb = new StringBuffer();
+			
+			sb.append(this.target).
+				append(source.path.substring(source_length));
+			
+			try
 			{
-				Main.log.print("новая папка "+source_path);
+				source.copy(sb.toString());
+			}
+			catch (Exception ex)
+			{
+				Main.log.print("Failed copy ---> "+ex);
+			}
+		}
+		
+		while (target_it.hasNext())
+		{
+			target = target_it.next();
+			StringBuffer sb = new StringBuffer();
+			
+			sb.append(this.history).
+				append(target.path.substring(target_length));
+			
+			try
+			{
+				target.copy(sb.toString());
+				target.delete();
+			}
+			catch (Exception ex)
+			{
+				Main.log.print("Failed copy ---> "+ex);
 			}
 			
-			
-			// Если в target закончились файлы
-			if (target_number > target_size) has_next_target = false;
-			
-			
-			// Если в source закончились файлы и нужен следующий, т.е. не ждет от target.
-			if (source_number > source_size && isSource) has_next_source = false;
+			File f = new File(sb.toString());
+			f.renameTo( new File(f.getAbsolutePath()+" "+ String.format(history_delete_suffix, System.currentTimeMillis()) ));
 			
 		}
-		
-		while (target_number <= target_size)
-		{
-			target_path = target_dirs.get(target_number++);
-			Main.log.print("папка "+target_path+" удалена");
-		}
-		
 	}
 	
+	private void copyToHistory(File source, File target, String particle)
+	{
+		StringBuilder sb = new StringBuilder();
+		String name_file = source.getName();
+		
+		sb.append(target.getParent()).
+			append(File.separator);
+		
+		// Создание имени файл с постфиксом
+		if (name_file.lastIndexOf('.') == -1)
+		{
+			sb.append(name_file).
+				append(".").
+				append(particle);
+		}
+		else
+		{
+			sb.append(new String(name_file.substring(0, name_file.lastIndexOf('.')+1))).
+				append(particle).
+				append(new String(name_file.substring(name_file.lastIndexOf('.'), name_file.length())));
+		}
+		
+		//System.out.println("Copy to history: "+source+" - "+sb);
+		
+		if (!target.getParentFile().exists()) target.getParentFile().mkdirs();
+		copyFile(source, new File(sb.toString()));
+		
+		try
+		{
+			if (source.exists()) source.delete();
+		}
+		catch (Exception ex)
+		{
+			Main.log.print("Failed deleted ---> "+ex);
+		}
+	}
+	
+	private void copyFile(File source, File target)
+	{
+		
+		if (!target.getParentFile().exists()) target.getParentFile().mkdirs();
+		
+		try
+		{
+			if (target.exists()) target.delete();
+			Files.copy(source.toPath(), target.toPath());
+			target.setLastModified(source.lastModified());
+		}
+		catch (Exception ex)
+		{
+			Main.log.print("Failed copy ----> "+ex);
+		}
+	}
+	
+	
+	private boolean isIgnore(File f)
+	{
+		for (String s : ignore_list)
+		{
+			if (f.getName().matches(s)) return true;
+		}
+		return false;
+	}
+	
+	/*
+	 * Загрзка настроек.
+	 * Нужен файл ini и в нем блоки - [delete], [history], [ignore]
+	 */
 	private void loadConfig()
 	{
 		File conf = new File("Backup.ini");
@@ -462,7 +480,6 @@ public class Backup {
 						switch(command)
 						{
 						case 0:
-							
 							break;
 						case 1:
 							s = s.replace("\"", "");
@@ -495,4 +512,5 @@ public class Backup {
 			
 		}
 	}
+	
 }
