@@ -19,7 +19,7 @@ public class Logger {
 			}
 			catch (Exception ex)
 			{
-				System.out.println("Неудалось создать лог файл");				
+				System.out.println("Неудалось создать лог файл");
 			}
 		
 	}

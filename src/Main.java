@@ -7,6 +7,7 @@ public class Main {
 	 */
 	
 	static Logger log;
+	static Logger error_log;
 	
 	public static void main(String[] args) 
 	{
@@ -15,6 +16,11 @@ public class Main {
 		boolean isFull = true;
 		String source = "";
 		String target = "";
+		
+		if (args.length == 0)
+		{
+			help();
+		}
 		
 		for (String str : args)
 		{
@@ -48,7 +54,8 @@ public class Main {
 			
 			String baseDir = new File("").getAbsolutePath();			
 			test = new File (source);
-			log = new Logger(baseDir+"/backup_log");
+			log = new Logger(baseDir+"/backup.log");
+			error_log = new Logger(baseDir +"/error_log");
 						
 			if ("".equals(source))
 			{
@@ -77,8 +84,8 @@ public class Main {
 			
 			
 			log.print("Start "+source+" -> "+target);
-			Backup b = new Backup(source, target, isFull );
-			b.start();
+			Backup b = new Backup(source, target);
+			b.start(isFull);
 			
 			// Выводим время работы
 			long end = System.nanoTime();
@@ -90,6 +97,8 @@ public class Main {
 			time /= 60;
 			log.print("Done "+source+" -> "+target+" (Time: "+(time == 0 ? (min == 0 ? sec+" s" : min+":"+sec) :  time +":"+min+":"+sec )+" )");
 			//log.print("Время бэкапа: "+ time +":"+min+":"+sec);
+			
+			
 		}
 	}
 	
